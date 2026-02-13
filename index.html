@@ -558,8 +558,14 @@
             isPanning = false;
             canvas.style.cursor = 'crosshair';
         } else if (isDragging) {
+            const wasDraggingObject = (draggingObj !== null);
             isDragging = false;
             handleInteractionEnd();
+            
+            // オブジェクトを移動した場合は履歴を保存
+            if (wasDraggingObject && mode === 'select') {
+                saveHistory();
+            }
         }
     }
 
@@ -621,9 +627,15 @@
 
     function onTouchEnd(e) {
         if (e.touches.length === 0) {
+            const wasDraggingObject = (draggingObj !== null);
             isPinching = false;
             isDragging = false;
             handleInteractionEnd();
+            
+            // オブジェクトを移動した場合は履歴を保存
+            if (wasDraggingObject && mode === 'select') {
+                saveHistory();
+            }
         }
     }
 
@@ -639,11 +651,17 @@
                 }
                 draggingObj = selectedObj;
                 if (draggingObj.type === 'wall') {
-                    selectedWalls.forEach(w => { w._origX1 = w.x1; w._origY1 = w.y1; w._origX2 = w.x2; w._origY2 = w.y2; });
+                    selectedWalls.forEach(w => { 
+                        w._origX1 = w.x1; 
+                        w._origY1 = w.y1; 
+                        w._origX2 = w.x2; 
+                        w._origY2 = w.y2; 
+                    });
                 } else if (draggingObj.type === 'area') {
-                    draggingObj._origPoints = draggingObj.points.map(p => ({...p}));
+                    draggingObj._origPoints = draggingObj.points.map(p => ({x: p.x, y: p.y}));
                 } else {
-                    draggingObj._origX = draggingObj.x; draggingObj._origY = draggingObj.y;
+                    draggingObj._origX = draggingObj.x; 
+                    draggingObj._origY = draggingObj.y;
                 }
             }
         } else if (mode === 'area') {
@@ -660,11 +678,16 @@
             const dy = pos.y - startPos.y;
             if (draggingObj.type === 'wall') {
                 selectedWalls.forEach(w => {
-                    w.x1 = w._origX1 + dx; w.y1 = w._origY1 + dy;
-                    w.x2 = w._origX2 + dx; w.y2 = w._origY2 + dy;
+                    w.x1 = w._origX1 + dx; 
+                    w.y1 = w._origY1 + dy;
+                    w.x2 = w._origX2 + dx; 
+                    w.y2 = w._origY2 + dy;
                 });
             } else if (draggingObj.type === 'area') {
-                draggingObj.points = draggingObj._origPoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                draggingObj.points = draggingObj._origPoints.map(p => ({ 
+                    x: p.x + dx, 
+                    y: p.y + dy 
+                }));
             } else {
                 draggingObj.x = draggingObj._origX + dx;
                 draggingObj.y = draggingObj._origY + dy;
