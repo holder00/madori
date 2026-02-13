@@ -10,43 +10,51 @@
         canvas { display: block; background: #fff; }
 
         .ui-panel { position: fixed; background: var(--ui-bg); backdrop-filter: blur(5px); z-index: 100; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        #top-bar { top: 10px; left: 10px; right: 10px; height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; gap: 5px; }
+        #top-bar { top: 10px; left: 10px; right: 10px; display: flex; flex-direction: column; padding: 5px 10px; gap: 5px; }
+        .top-row { display: flex; align-items: center; justify-content: space-between; }
         
         #toolbar { bottom: 0; left: 0; width: 100%; display: flex; flex-direction: column; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
-        .scroll-menu { display: flex; overflow-x: auto; padding: 10px; gap: 8px; }
+        .scroll-menu { display: flex; overflow-x: auto; padding: 10px; gap: 8px; align-items: center; }
         
         button.tool-btn { 
             flex: 0 0 auto; padding: 8px 12px; border-radius: 6px; border: 1px solid #ddd; background: white; font-size: 11px; display: flex; flex-direction: column; align-items: center; min-width: 60px;
         }
         button.tool-btn.active { background: #e3f2fd; border-color: var(--primary); font-weight: bold; }
 
-        /* 編集メニューのボタンが増えるため折り返し対応 */
         #edit-menu { display: none; position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); padding: 10px; gap: 8px; background: var(--primary); color: white; flex-wrap: wrap; justify-content: center; width: max-content; max-width: 90%; }
         #edit-menu button { background: none; border: 1px solid white; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; }
         
-        .floor-btn { padding: 5px 15px; border: 1px solid #ccc; background: #fff; border-radius: 20px; }
+        .floor-btn { padding: 5px 15px; border: 1px solid #ccc; background: #fff; border-radius: 20px; font-size: 12px; }
         .floor-btn.active { background: var(--primary); color: white; }
-        #zoom-info { position: fixed; top: 70px; right: 20px; font-size: 10px; color: #666; background: rgba(255,255,255,0.7); padding: 2px 5px; border-radius: 4px; }
+        #zoom-info { position: fixed; top: 80px; right: 20px; font-size: 10px; color: #666; background: rgba(255,255,255,0.7); padding: 2px 5px; border-radius: 4px; }
         
         .top-btn-group button { font-size: 11px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
+        .sub-menu { display: flex; gap: 5px; margin-left: 5px; border-left: 1px solid #ccc; padding-left: 5px; }
+        
+        #cost-display { font-size: 12px; font-weight: bold; color: var(--accent); background: #fff; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--accent); }
     </style>
 </head>
 <body>
 
 <div id="top-bar" class="ui-panel">
-    <div>
-        <button class="floor-btn active" id="f1-btn" onclick="changeFloor(1)">1F</button>
-        <button class="floor-btn" id="f2-btn" onclick="changeFloor(2)">2F</button>
+    <div class="top-row">
+        <div>
+            <button class="floor-btn active" id="f1-btn" onclick="changeFloor(1)">1F</button>
+            <button class="floor-btn" id="f2-btn" onclick="changeFloor(2)">2F</button>
+        </div>
+        <div id="status" style="font-size:11px; flex-grow:1; text-align:center;">モード: 壁を描く</div>
+        <div class="top-btn-group">
+            <button onclick="saveData()">保存</button>
+            <button onclick="loadData()">読込</button>
+            <button onclick="resetView()">リセット</button>
+        </div>
     </div>
-    <div id="status" style="font-size:11px; flex-grow:1; text-align:center;">モード: 壁を描く</div>
-    <div class="top-btn-group">
-        <button onclick="saveData()">保存</button>
-        <button onclick="loadData()">読込</button>
-        <button onclick="resetView()">リセット</button>
+    <div class="top-row" style="justify-content: center; margin-top: 2px;">
+        <div id="cost-display">概算コスト: 0万円</div>
     </div>
 </div>
 
-<div id="zoom-info">ズーム: 100% (二本指で拡大縮小)</div>
+<div id="zoom-info">ズーム: 100%</div>
 
 <div id="edit-menu" class="ui-panel">
     <span id="select-label" style="font-size:10px; margin-right:5px; width:100%; text-align:center;"></span>
@@ -63,19 +71,29 @@
 
 <div id="toolbar" class="ui-panel">
     <div class="scroll-menu">
-        <button id="btn-wall" class="tool-btn active" onclick="setMode('wall')">🧱<span>壁</span></button>
-        <button id="btn-area-kitchen" class="tool-btn" onclick="setMode('area', 'kitchen')">🍳<span>キッチンスペース</span></button>
-        <button id="btn-area-void" class="tool-btn" onclick="setMode('area', 'void')">🕳<span>吹き抜け範囲</span></button>
         <button id="btn-select" class="tool-btn" onclick="setMode('select')">👆<span>選択/移動</span></button>
+        
+        <button id="btn-wall" class="tool-btn active" onclick="setMode('wall')">🧱<span>壁</span></button>
+        <div class="sub-menu" id="wall-options" style="display:flex;">
+            <button id="btn-wall-outer" class="tool-btn active" onclick="setWallThickness('outer')" style="min-width:40px;">外</button>
+            <button id="btn-wall-inner" class="tool-btn" onclick="setWallThickness('inner')" style="min-width:40px;">内</button>
+        </div>
+
+        <button id="btn-area-room" class="tool-btn" onclick="setMode('area', 'room')">🟩<span>部屋エリア</span></button>
+        <button id="btn-area-kitchen" class="tool-btn" onclick="setMode('area', 'kitchen')">🍳<span>キッチン</span></button>
         <button class="tool-btn" onclick="setAddItem('door')">🚪<span>ドア</span></button>
         <button class="tool-btn" onclick="setAddItem('stair')">🪜<span>階段</span></button>
         <button class="tool-btn" onclick="setAddItem('bath100')">🛁<span>風呂1坪</span></button>
         <button class="tool-btn" onclick="setAddItem('toilet')">🚽<span>トイレ</span></button>
+        <button class="tool-btn" onclick="setAddItem('bed')">🛏<span>ベッド</span></button>
+        <button class="tool-btn" onclick="setAddItem('dining')">🪑<span>ダイニング</span></button>
     </div>
 </div>
 
 <script>
-    const GRID_UNIT = 20;
+    const GRID_UNIT = 20; // 1グリッド = 0.25間 (約455mm)
+    const REAL_M_PER_GRID = 0.455; // 1グリッドあたりのメートル
+    
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
@@ -84,9 +102,10 @@
     let mode = 'wall'; 
     let activeAreaType = null;
     let activeItemType = null;
+    let currentWallThickness = 'outer'; // 'outer' or 'inner'
     let selectedObj = null;
-    let selectedWalls = []; // 一体化した壁の管理用
-    let draggingObj = null; // ドラッグ移動中のオブジェクト
+    let selectedWalls = [];
+    let draggingObj = null;
 
     let camera = { x: 0, y: 0, zoom: 1.0 };
     let isDragging = false, isPinching = false;
@@ -111,10 +130,7 @@
     }
 
     function screenToWorld(x, y) {
-        return {
-            x: (x - camera.x) / camera.zoom,
-            y: (y - camera.y) / camera.zoom
-        };
+        return { x: (x - camera.x) / camera.zoom, y: (y - camera.y) / camera.zoom };
     }
 
     function snap(val) { return Math.round(val / GRID_UNIT) * GRID_UNIT; }
@@ -136,18 +152,13 @@
             if (mode === 'select') {
                 handleSelection(startPos.x, startPos.y);
                 if (selectedObj) {
-                    // オブジェクトの移動開始時に元の座標を記録
                     draggingObj = selectedObj;
                     if (draggingObj.type === 'wall') {
-                        selectedWalls.forEach(w => {
-                            w._origX1 = w.x1; w._origY1 = w.y1;
-                            w._origX2 = w.x2; w._origY2 = w.y2;
-                        });
+                        selectedWalls.forEach(w => { w._origX1 = w.x1; w._origY1 = w.y1; w._origX2 = w.x2; w._origY2 = w.y2; });
                     } else if (draggingObj.type === 'area') {
                         draggingObj._origPoints = draggingObj.points.map(p => ({...p}));
                     } else {
-                        draggingObj._origX = draggingObj.x;
-                        draggingObj._origY = draggingObj.y;
+                        draggingObj._origX = draggingObj.x; draggingObj._origY = draggingObj.y;
                     }
                 }
             } else if (mode === 'area') {
@@ -167,14 +178,13 @@
         if (isPinching && e.touches.length === 2) {
             const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
             const delta = dist / startDist;
-            camera.zoom = Math.min(Math.max(camera.zoom * delta, 0.1), 3.0);
+            camera.zoom = Math.min(Math.max(camera.zoom * delta, 0.5), 3.0);
             startDist = dist;
             document.getElementById('zoom-info').innerText = `ズーム: ${Math.round(camera.zoom*100)}%`;
         } else if (isDragging) {
             const touch = e.touches[0];
             if (mode === 'select') {
                 if (draggingObj) {
-                    // 選択されたオブジェクトをスナップしながら移動
                     const worldPos = screenToWorld(touch.pageX, touch.pageY);
                     currentPos = { x: snap(worldPos.x), y: snap(worldPos.y) };
                     const dx = currentPos.x - startPos.x;
@@ -182,18 +192,15 @@
 
                     if (draggingObj.type === 'wall') {
                         selectedWalls.forEach(w => {
-                            w.x1 = w._origX1 + dx; w.y1 = w._origY1 + dy;
-                            w.x2 = w._origX2 + dx; w.y2 = w._origY2 + dy;
+                            w.x1 = w._origX1 + dx; w.y1 = w._origY1 + dy; w.x2 = w._origX2 + dx; w.y2 = w._origY2 + dy;
                         });
                     } else if (draggingObj.type === 'area') {
                         draggingObj.points = draggingObj._origPoints.map(p => ({x: p.x + dx, y: p.y + dy}));
                     } else {
-                        draggingObj.x = draggingObj._origX + dx;
-                        draggingObj.y = draggingObj._origY + dy;
+                        draggingObj.x = draggingObj._origX + dx; draggingObj.y = draggingObj._origY + dy;
                     }
                 } else {
-                    camera.x += (touch.pageX - lastTouch.x);
-                    camera.y += (touch.pageY - lastTouch.y);
+                    camera.x += (touch.pageX - lastTouch.x); camera.y += (touch.pageY - lastTouch.y);
                 }
             } else {
                 const worldPos = screenToWorld(touch.pageX, touch.pageY);
@@ -208,17 +215,18 @@
         if (mode === 'wall' && isDragging) {
             if (startPos.x !== currentPos.x || startPos.y !== currentPos.y) {
                 data[currentFloor].objects.push({
-                    id: Date.now(), type: 'wall', x1: startPos.x, y1: startPos.y, x2: currentPos.x, y2: currentPos.y
+                    id: Date.now(), type: 'wall', thicknessType: currentWallThickness,
+                    x1: startPos.x, y1: startPos.y, x2: currentPos.x, y2: currentPos.y
                 });
             }
         }
         isDragging = false;
         isPinching = false;
         draggingObj = null;
+        updateCost();
         draw();
     }
 
-    // 繋がっている壁を芋づる式に取得（一体判定）
     function getConnectedWalls(startWall) {
         let connected = [startWall];
         let toCheck = [startWall];
@@ -230,9 +238,7 @@
                 if (o.type === 'wall' && !checkedIds.has(o.id)) {
                     if (o.x1 === w.x1 && o.y1 === w.y1 || o.x1 === w.x2 && o.y1 === w.y2 ||
                         o.x2 === w.x1 && o.y2 === w.y1 || o.x2 === w.x2 && o.y2 === w.y2) {
-                        connected.push(o);
-                        toCheck.push(o);
-                        checkedIds.add(o.id);
+                        connected.push(o); toCheck.push(o); checkedIds.add(o.id);
                     }
                 }
             });
@@ -250,10 +256,7 @@
             } else if (o.type === 'area') {
                 if (isPointInPoly({x,y}, o.points)) found = o;
             } else {
-                // 幅や高さを考慮した当たり判定
-                let cw = (o.w || 4) * GRID_UNIT;
-                let ch = (o.h || 4) * GRID_UNIT;
-                // 簡易的に回転非考慮のバウンディングボックスとして判定
+                let cw = (o.w || 4) * GRID_UNIT; let ch = (o.h || 4) * GRID_UNIT;
                 if (x >= o.x - cw/2 && x <= o.x + cw && y >= o.y - ch/2 && y <= o.y + ch) found = o;
             }
             if (found) break;
@@ -269,7 +272,6 @@
                 document.getElementById('select-label').innerText = found.label || found.type;
             }
 
-            // サイズ変更ボタンの表示切り替え（矩形や建具のみ）
             const isSizeable = (found.type !== 'wall' && found.type !== 'area');
             document.getElementById('btn-w-up').style.display = isSizeable ? 'inline-block' : 'none';
             document.getElementById('btn-w-down').style.display = isSizeable ? 'inline-block' : 'none';
@@ -287,10 +289,10 @@
         data[currentFloor].objects.push({
             id: Date.now(), type: 'area', areaType: activeAreaType,
             points: [...tempPoints],
-            color: activeAreaType === 'kitchen' ? 'rgba(243, 156, 18, 0.4)' : 'rgba(0,0,0,0.1)',
-            isVoid: activeAreaType === 'void'
+            color: activeAreaType === 'kitchen' ? 'rgba(243, 156, 18, 0.4)' : 'rgba(52, 152, 219, 0.3)',
         });
         tempPoints = [];
+        updateCost();
         setMode('select');
     }
 
@@ -298,10 +300,19 @@
         mode = m; activeAreaType = sub;
         tempPoints = [];
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-        if (sub) document.getElementById('btn-area-'+sub).classList.add('active');
+        
+        if (sub) document.getElementById('btn-area-'+sub)?.classList.add('active');
         else if (document.getElementById('btn-'+m)) document.getElementById('btn-'+m).classList.add('active');
+        
+        document.getElementById('wall-options').style.display = m === 'wall' ? 'flex' : 'none';
         document.getElementById('status').innerText = `モード: ${m} ${sub||''}`;
         deselect();
+    }
+
+    function setWallThickness(type) {
+        currentWallThickness = type;
+        document.getElementById('btn-wall-outer').classList.toggle('active', type==='outer');
+        document.getElementById('btn-wall-inner').classList.toggle('active', type==='inner');
     }
 
     function setAddItem(type) {
@@ -315,13 +326,43 @@
             'door': { w: 4, h: 4, type: 'door' },
             'stair': { w: 4, h: 8, type: 'rect', label: '階段', color: '#bdc3c7' },
             'bath100': { w: 8, h: 8, type: 'rect', label: '風呂', color: '#3498db' },
-            'toilet': { w: 4, h: 6, type: 'rect', label: 'トイレ', color: '#1abc9c' } // 縦長に修正
+            'toilet': { w: 4, h: 6, type: 'rect', label: 'トイレ', color: '#1abc9c' },
+            'bed': { w: 4.5, h: 9, type: 'rect', label: 'ベッド', color: '#9b59b6' },
+            'dining': { w: 6, h: 6, type: 'rect', label: 'ﾀﾞｲﾆﾝｸﾞ', color: '#e67e22' }
         };
         const p = presets[activeItemType];
         data[currentFloor].objects.push({ ...p, id: Date.now(), x, y, rotation: 0 });
         setMode('select');
     }
 
+    // --- 計算機能 ---
+    function calcPolygonAreaM2(points) {
+        let areaPx = 0;
+        for(let i=0, j=points.length-1; i<points.length; j=i++) {
+            areaPx += (points[j].x + points[i].x) * (points[j].y - points[i].y);
+        }
+        let areaGridSq = Math.abs(areaPx / 2) / (GRID_UNIT * GRID_UNIT);
+        return areaGridSq * (REAL_M_PER_GRID * REAL_M_PER_GRID);
+    }
+
+    function updateCost() {
+        let totalCost = 0; // 万単位
+        // 全フロアを計算対象とする場合
+        [1, 2].forEach(floor => {
+            data[floor].objects.forEach(o => {
+                if (o.type === 'wall') {
+                    let lenM = (Math.hypot(o.x2 - o.x1, o.y2 - o.y1) / GRID_UNIT) * REAL_M_PER_GRID;
+                    totalCost += lenM * 1.5; // 壁1m = 1.5万円の概算
+                } else if (o.type === 'area') {
+                    let m2 = calcPolygonAreaM2(o.points);
+                    totalCost += m2 * 20; // 施工面積1平米 = 20万円の概算
+                }
+            });
+        });
+        document.getElementById('cost-display').innerText = `概算コスト: 約 ${Math.round(totalCost).toLocaleString()} 万円`;
+    }
+
+    // --- 描画処理 ---
     function draw() {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -337,15 +378,19 @@
             ctx.beginPath(); ctx.moveTo(-2000,i); ctx.lineTo(3000,i); ctx.stroke();
         }
 
+        // 下階の表示（2F編集時）
         if (currentFloor === 2) {
-            ctx.globalAlpha = 0.1;
+            ctx.globalAlpha = 0.2;
             data[1].objects.forEach(renderObj);
             ctx.globalAlpha = 1.0;
         }
+
         data[currentFloor].objects.forEach(renderObj);
 
+        // 作業中表示
         if (mode === 'wall' && isDragging) {
-            ctx.strokeStyle = '#3498db'; ctx.lineWidth = 5;
+            ctx.strokeStyle = '#3498db'; 
+            ctx.lineWidth = currentWallThickness === 'outer' ? 8 : 4;
             ctx.beginPath(); ctx.moveTo(startPos.x, startPos.y); ctx.lineTo(currentPos.x, currentPos.y); ctx.stroke();
         }
         if (tempPoints.length > 0) {
@@ -361,13 +406,14 @@
 
     function renderObj(o) {
         ctx.save();
-        // 連動している壁も含めてハイライト
         const isSelected = selectedObj && (selectedObj.id === o.id || (o.type === 'wall' && selectedWalls.some(w => w.id === o.id)));
         
         if (o.type === 'wall') {
             ctx.strokeStyle = isSelected ? 'red' : '#333';
-            ctx.lineWidth = 8; ctx.lineCap = 'round';
+            ctx.lineWidth = o.thicknessType === 'inner' ? 4 : 8; // 外壁/内壁で太さを変える
+            ctx.lineCap = 'round';
             ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke();
+            
         } else if (o.type === 'area') {
             ctx.fillStyle = o.color;
             ctx.beginPath();
@@ -375,6 +421,18 @@
             ctx.closePath(); ctx.fill();
             ctx.strokeStyle = isSelected ? 'red' : '#7f8c8d';
             ctx.lineWidth = 2; ctx.stroke();
+
+            // 面積・畳数の表示
+            let cx = 0, cy = 0;
+            o.points.forEach(p => { cx += p.x; cy += p.y; });
+            cx /= o.points.length; cy /= o.points.length;
+            
+            let m2 = calcPolygonAreaM2(o.points);
+            let jou = m2 / 1.62; // 1帖 = 約1.62平米
+            
+            ctx.fillStyle = '#333'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(`${m2.toFixed(1)}㎡ (${jou.toFixed(1)}帖)`, cx, cy);
+
         } else if (o.type === 'door') {
             ctx.translate(o.x, o.y); ctx.rotate(o.rotation * Math.PI / 180);
             ctx.strokeStyle = isSelected ? 'red' : '#e74c3c'; ctx.lineWidth = 3;
@@ -393,6 +451,7 @@
         ctx.restore();
     }
 
+    // --- 数学ユーティリティ ---
     function distToSegment(p, v, w) {
         const l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
         if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
@@ -409,27 +468,19 @@
         return inside;
     }
 
-    // 各種操作
+    // --- UIイベント処理 ---
     function rotateObject() { if(selectedObj && selectedObj.type !== 'wall') { selectedObj.rotation = (selectedObj.rotation + 90) % 360; draw(); } }
+    function changeSize(dw, dh) { if (selectedObj && selectedObj.w !== undefined) { selectedObj.w = Math.max(2, selectedObj.w + dw); selectedObj.h = Math.max(2, selectedObj.h + dh); draw(); } }
     
-    function changeSize(dw, dh) {
-        if (selectedObj && selectedObj.w !== undefined) {
-            selectedObj.w = Math.max(2, selectedObj.w + dw); // 最小幅は2グリッド
-            selectedObj.h = Math.max(2, selectedObj.h + dh);
-            draw();
-        }
-    }
-
     function deleteObject() { 
         if(selectedObj) { 
             if (selectedObj.type === 'wall' && selectedWalls.length > 0) {
-                // 連動している壁を全て削除
                 const idsToRemove = selectedWalls.map(w => w.id);
                 data[currentFloor].objects = data[currentFloor].objects.filter(o => !idsToRemove.includes(o.id));
             } else {
                 data[currentFloor].objects = data[currentFloor].objects.filter(o => o.id !== selectedObj.id); 
             }
-            deselect(); 
+            updateCost(); deselect(); 
         } 
     }
     
@@ -437,20 +488,10 @@
     function changeFloor(f) { currentFloor = f; document.getElementById('f1-btn').classList.toggle('active', f===1); document.getElementById('f2-btn').classList.toggle('active', f===2); deselect(); }
     function resetView() { camera = { x: 0, y: 0, zoom: 1.0 }; draw(); }
 
-    // 保存と読込
-    function saveData() {
-        localStorage.setItem('madori_planner_data', JSON.stringify(data));
-        alert('編集状態を保存しました');
-    }
-    function loadData() {
-        const saved = localStorage.getItem('madori_planner_data');
-        if (saved) {
-            data = JSON.parse(saved);
-            deselect();
-            alert('保存データを読み込みました');
-        } else {
-            alert('保存されたデータがありません');
-        }
+    function saveData() { localStorage.setItem('madori_planner_data', JSON.stringify(data)); alert('保存しました'); }
+    function loadData() { 
+        const saved = localStorage.getItem('madori_planner_data'); 
+        if (saved) { data = JSON.parse(saved); updateCost(); deselect(); alert('読込しました'); } 
     }
 
     init();
