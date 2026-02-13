@@ -10,7 +10,7 @@
         canvas { display: block; background: #fff; }
 
         .ui-panel { position: fixed; background: var(--ui-bg); backdrop-filter: blur(5px); z-index: 100; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        #top-bar { top: 10px; left: 10px; right: 10px; height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; }
+        #top-bar { top: 10px; left: 10px; right: 10px; height: 50px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; gap: 5px; }
         
         #toolbar { bottom: 0; left: 0; width: 100%; display: flex; flex-direction: column; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
         .scroll-menu { display: flex; overflow-x: auto; padding: 10px; gap: 8px; }
@@ -20,12 +20,15 @@
         }
         button.tool-btn.active { background: #e3f2fd; border-color: var(--primary); font-weight: bold; }
 
-        #edit-menu { display: none; position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); padding: 10px; gap: 15px; background: var(--primary); color: white; }
+        /* 編集メニューのボタンが増えるため折り返し対応 */
+        #edit-menu { display: none; position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); padding: 10px; gap: 8px; background: var(--primary); color: white; flex-wrap: wrap; justify-content: center; width: max-content; max-width: 90%; }
         #edit-menu button { background: none; border: 1px solid white; color: white; padding: 5px 10px; border-radius: 4px; font-size: 12px; }
         
         .floor-btn { padding: 5px 15px; border: 1px solid #ccc; background: #fff; border-radius: 20px; }
         .floor-btn.active { background: var(--primary); color: white; }
         #zoom-info { position: fixed; top: 70px; right: 20px; font-size: 10px; color: #666; background: rgba(255,255,255,0.7); padding: 2px 5px; border-radius: 4px; }
+        
+        .top-btn-group button { font-size: 11px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; background: #fff; }
     </style>
 </head>
 <body>
@@ -35,14 +38,22 @@
         <button class="floor-btn active" id="f1-btn" onclick="changeFloor(1)">1F</button>
         <button class="floor-btn" id="f2-btn" onclick="changeFloor(2)">2F</button>
     </div>
-    <div id="status" style="font-size:11px;">モード: 壁を描く</div>
-    <button onclick="resetView()" style="font-size:11px;">表示リセット</button>
+    <div id="status" style="font-size:11px; flex-grow:1; text-align:center;">モード: 壁を描く</div>
+    <div class="top-btn-group">
+        <button onclick="saveData()">保存</button>
+        <button onclick="loadData()">読込</button>
+        <button onclick="resetView()">リセット</button>
+    </div>
 </div>
 
 <div id="zoom-info">ズーム: 100% (二本指で拡大縮小)</div>
 
 <div id="edit-menu" class="ui-panel">
-    <span id="select-label" style="font-size:10px; margin-right:10px;"></span>
+    <span id="select-label" style="font-size:10px; margin-right:5px; width:100%; text-align:center;"></span>
+    <button id="btn-w-up" onclick="changeSize(2, 0)">幅+</button>
+    <button id="btn-w-down" onclick="changeSize(-2, 0)">幅-</button>
+    <button id="btn-h-up" onclick="changeSize(0, 2)">長+</button>
+    <button id="btn-h-down" onclick="changeSize(0, -2)">長-</button>
     <button onclick="rotateObject()">⟳ 回転</button>
     <button onclick="deleteObject()" style="color:#ffadad;">🗑 削除</button>
     <button onclick="deselect()">× 閉じる</button>
@@ -55,7 +66,7 @@
         <button id="btn-wall" class="tool-btn active" onclick="setMode('wall')">🧱<span>壁</span></button>
         <button id="btn-area-kitchen" class="tool-btn" onclick="setMode('area', 'kitchen')">🍳<span>キッチンスペース</span></button>
         <button id="btn-area-void" class="tool-btn" onclick="setMode('area', 'void')">🕳<span>吹き抜け範囲</span></button>
-        <button id="btn-select" class="tool-btn" onclick="setMode('select')">👆<span>選択/消去</span></button>
+        <button id="btn-select" class="tool-btn" onclick="setMode('select')">👆<span>選択/移動</span></button>
         <button class="tool-btn" onclick="setAddItem('door')">🚪<span>ドア</span></button>
         <button class="tool-btn" onclick="setAddItem('stair')">🪜<span>階段</span></button>
         <button class="tool-btn" onclick="setAddItem('bath100')">🛁<span>風呂1坪</span></button>
@@ -64,24 +75,24 @@
 </div>
 
 <script>
-    const GRID_UNIT = 20; // 0.25間ベース
+    const GRID_UNIT = 20;
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
 
-    // 状態管理
     let data = { 1: { objects: [] }, 2: { objects: [] } };
     let currentFloor = 1;
     let mode = 'wall'; 
     let activeAreaType = null;
+    let activeItemType = null;
     let selectedObj = null;
+    let selectedWalls = []; // 一体化した壁の管理用
+    let draggingObj = null; // ドラッグ移動中のオブジェクト
 
-    // カメラ（ズーム・パン）状態
     let camera = { x: 0, y: 0, zoom: 1.0 };
     let isDragging = false, isPinching = false;
     let lastTouch = { x: 0, y: 0 }, startDist = 0;
     
-    // 描画中の一時データ
-    let tempPoints = []; // 任意形状用
+    let tempPoints = [];
     let startPos = {x:0, y:0}, currentPos = {x:0, y:0};
 
     function init() {
@@ -99,7 +110,6 @@
         draw();
     }
 
-    // 画面座標から図面座標へ変換
     function screenToWorld(x, y) {
         return {
             x: (x - camera.x) / camera.zoom,
@@ -125,9 +135,23 @@
 
             if (mode === 'select') {
                 handleSelection(startPos.x, startPos.y);
+                if (selectedObj) {
+                    // オブジェクトの移動開始時に元の座標を記録
+                    draggingObj = selectedObj;
+                    if (draggingObj.type === 'wall') {
+                        selectedWalls.forEach(w => {
+                            w._origX1 = w.x1; w._origY1 = w.y1;
+                            w._origX2 = w.x2; w._origY2 = w.y2;
+                        });
+                    } else if (draggingObj.type === 'area') {
+                        draggingObj._origPoints = draggingObj.points.map(p => ({...p}));
+                    } else {
+                        draggingObj._origX = draggingObj.x;
+                        draggingObj._origY = draggingObj.y;
+                    }
+                }
             } else if (mode === 'area') {
                 tempPoints.push({ x: startPos.x, y: startPos.y });
-                // 始点に戻ったら確定
                 if (tempPoints.length > 2 && startPos.x === tempPoints[0].x && startPos.y === tempPoints[0].y) {
                     completeArea();
                 }
@@ -148,10 +172,29 @@
             document.getElementById('zoom-info').innerText = `ズーム: ${Math.round(camera.zoom*100)}%`;
         } else if (isDragging) {
             const touch = e.touches[0];
-            if (mode === 'select' && !selectedObj) {
-                // オブジェクトを掴んでいない時はパン(移動)
-                camera.x += (touch.pageX - lastTouch.x);
-                camera.y += (touch.pageY - lastTouch.y);
+            if (mode === 'select') {
+                if (draggingObj) {
+                    // 選択されたオブジェクトをスナップしながら移動
+                    const worldPos = screenToWorld(touch.pageX, touch.pageY);
+                    currentPos = { x: snap(worldPos.x), y: snap(worldPos.y) };
+                    const dx = currentPos.x - startPos.x;
+                    const dy = currentPos.y - startPos.y;
+
+                    if (draggingObj.type === 'wall') {
+                        selectedWalls.forEach(w => {
+                            w.x1 = w._origX1 + dx; w.y1 = w._origY1 + dy;
+                            w.x2 = w._origX2 + dx; w.y2 = w._origY2 + dy;
+                        });
+                    } else if (draggingObj.type === 'area') {
+                        draggingObj.points = draggingObj._origPoints.map(p => ({x: p.x + dx, y: p.y + dy}));
+                    } else {
+                        draggingObj.x = draggingObj._origX + dx;
+                        draggingObj.y = draggingObj._origY + dy;
+                    }
+                } else {
+                    camera.x += (touch.pageX - lastTouch.x);
+                    camera.y += (touch.pageY - lastTouch.y);
+                }
             } else {
                 const worldPos = screenToWorld(touch.pageX, touch.pageY);
                 currentPos = { x: snap(worldPos.x), y: snap(worldPos.y) };
@@ -171,7 +214,30 @@
         }
         isDragging = false;
         isPinching = false;
+        draggingObj = null;
         draw();
+    }
+
+    // 繋がっている壁を芋づる式に取得（一体判定）
+    function getConnectedWalls(startWall) {
+        let connected = [startWall];
+        let toCheck = [startWall];
+        let checkedIds = new Set([startWall.id]);
+
+        while(toCheck.length > 0) {
+            let w = toCheck.pop();
+            data[currentFloor].objects.forEach(o => {
+                if (o.type === 'wall' && !checkedIds.has(o.id)) {
+                    if (o.x1 === w.x1 && o.y1 === w.y1 || o.x1 === w.x2 && o.y1 === w.y2 ||
+                        o.x2 === w.x1 && o.y2 === w.y1 || o.x2 === w.x2 && o.y2 === w.y2) {
+                        connected.push(o);
+                        toCheck.push(o);
+                        checkedIds.add(o.id);
+                    }
+                }
+            });
+        }
+        return connected;
     }
 
     function handleSelection(x, y) {
@@ -184,14 +250,33 @@
             } else if (o.type === 'area') {
                 if (isPointInPoly({x,y}, o.points)) found = o;
             } else {
-                if (x >= o.x && x <= o.x + (o.w||4)*GRID_UNIT && y >= o.y && y <= o.y + (o.h||4)*GRID_UNIT) found = o;
+                // 幅や高さを考慮した当たり判定
+                let cw = (o.w || 4) * GRID_UNIT;
+                let ch = (o.h || 4) * GRID_UNIT;
+                // 簡易的に回転非考慮のバウンディングボックスとして判定
+                if (x >= o.x - cw/2 && x <= o.x + cw && y >= o.y - ch/2 && y <= o.y + ch) found = o;
             }
             if (found) break;
         }
+
         selectedObj = found;
         if (found) {
+            if (found.type === 'wall') {
+                selectedWalls = getConnectedWalls(found);
+                document.getElementById('select-label').innerText = `連続壁 (${selectedWalls.length})`;
+            } else {
+                selectedWalls = [];
+                document.getElementById('select-label').innerText = found.label || found.type;
+            }
+
+            // サイズ変更ボタンの表示切り替え（矩形や建具のみ）
+            const isSizeable = (found.type !== 'wall' && found.type !== 'area');
+            document.getElementById('btn-w-up').style.display = isSizeable ? 'inline-block' : 'none';
+            document.getElementById('btn-w-down').style.display = isSizeable ? 'inline-block' : 'none';
+            document.getElementById('btn-h-up').style.display = isSizeable ? 'inline-block' : 'none';
+            document.getElementById('btn-h-down').style.display = isSizeable ? 'inline-block' : 'none';
+
             document.getElementById('edit-menu').style.display = 'flex';
-            document.getElementById('select-label').innerText = found.type;
         } else {
             deselect();
         }
@@ -230,7 +315,7 @@
             'door': { w: 4, h: 4, type: 'door' },
             'stair': { w: 4, h: 8, type: 'rect', label: '階段', color: '#bdc3c7' },
             'bath100': { w: 8, h: 8, type: 'rect', label: '風呂', color: '#3498db' },
-            'toilet': { w: 4, h: 4, type: 'rect', label: 'トイレ', color: '#1abc9c' }
+            'toilet': { w: 4, h: 6, type: 'rect', label: 'トイレ', color: '#1abc9c' } // 縦長に修正
         };
         const p = presets[activeItemType];
         data[currentFloor].objects.push({ ...p, id: Date.now(), x, y, rotation: 0 });
@@ -246,15 +331,12 @@
 
         // グリッド
         ctx.strokeStyle = '#eee';
-        const viewW = canvas.width / camera.zoom + 200;
-        const viewH = canvas.height / camera.zoom + 200;
         for(let i=-2000; i<3000; i+=GRID_UNIT){
             ctx.beginPath(); ctx.lineWidth=i%(GRID_UNIT*4)===0?1:0.3;
             ctx.moveTo(i,-2000); ctx.lineTo(i,3000); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(-2000,i); ctx.lineTo(3000,i); ctx.stroke();
         }
 
-        // 階層表示
         if (currentFloor === 2) {
             ctx.globalAlpha = 0.1;
             data[1].objects.forEach(renderObj);
@@ -262,7 +344,6 @@
         }
         data[currentFloor].objects.forEach(renderObj);
 
-        // 作業中表示
         if (mode === 'wall' && isDragging) {
             ctx.strokeStyle = '#3498db'; ctx.lineWidth = 5;
             ctx.beginPath(); ctx.moveTo(startPos.x, startPos.y); ctx.lineTo(currentPos.x, currentPos.y); ctx.stroke();
@@ -273,7 +354,6 @@
             tempPoints.forEach((p, i) => i===0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
             ctx.lineTo(currentPos.x, currentPos.y);
             ctx.stroke();
-            // 始点を強調（閉じやすくするため）
             ctx.fillStyle = 'red';
             ctx.beginPath(); ctx.arc(tempPoints[0].x, tempPoints[0].y, 8/camera.zoom, 0, Math.PI*2); ctx.fill();
         }
@@ -281,7 +361,9 @@
 
     function renderObj(o) {
         ctx.save();
-        const isSelected = selectedObj && selectedObj.id === o.id;
+        // 連動している壁も含めてハイライト
+        const isSelected = selectedObj && (selectedObj.id === o.id || (o.type === 'wall' && selectedWalls.some(w => w.id === o.id)));
+        
         if (o.type === 'wall') {
             ctx.strokeStyle = isSelected ? 'red' : '#333';
             ctx.lineWidth = 8; ctx.lineCap = 'round';
@@ -296,7 +378,7 @@
         } else if (o.type === 'door') {
             ctx.translate(o.x, o.y); ctx.rotate(o.rotation * Math.PI / 180);
             ctx.strokeStyle = isSelected ? 'red' : '#e74c3c'; ctx.lineWidth = 3;
-            const size = 4 * GRID_UNIT;
+            const size = o.w * GRID_UNIT;
             ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0, size); ctx.stroke();
             ctx.setLineDash([5, 5]);
             ctx.beginPath(); ctx.arc(0, 0, size, Math.PI/2, 0, true); ctx.stroke();
@@ -311,7 +393,6 @@
         ctx.restore();
     }
 
-    // 数学ヘルパー
     function distToSegment(p, v, w) {
         const l2 = Math.pow(v.x - w.x, 2) + Math.pow(v.y - w.y, 2);
         if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
@@ -319,6 +400,7 @@
         t = Math.max(0, Math.min(1, t));
         return Math.hypot(p.x - (v.x + t * (w.x - v.x)), p.y - (v.y + t * (w.y - v.y)));
     }
+    
     function isPointInPoly(p, poly) {
         let inside = false;
         for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -327,12 +409,49 @@
         return inside;
     }
 
-    // UI操作
+    // 各種操作
     function rotateObject() { if(selectedObj && selectedObj.type !== 'wall') { selectedObj.rotation = (selectedObj.rotation + 90) % 360; draw(); } }
-    function deleteObject() { if(selectedObj) { data[currentFloor].objects = data[currentFloor].objects.filter(o => o.id !== selectedObj.id); deselect(); } }
-    function deselect() { selectedObj = null; document.getElementById('edit-menu').style.display = 'none'; draw(); }
-    function changeFloor(f) { currentFloor = f; document.getElementById('f1-btn').classList.toggle('active', f===1); document.getElementById('f2-btn').classList.toggle('active', f===2); draw(); }
+    
+    function changeSize(dw, dh) {
+        if (selectedObj && selectedObj.w !== undefined) {
+            selectedObj.w = Math.max(2, selectedObj.w + dw); // 最小幅は2グリッド
+            selectedObj.h = Math.max(2, selectedObj.h + dh);
+            draw();
+        }
+    }
+
+    function deleteObject() { 
+        if(selectedObj) { 
+            if (selectedObj.type === 'wall' && selectedWalls.length > 0) {
+                // 連動している壁を全て削除
+                const idsToRemove = selectedWalls.map(w => w.id);
+                data[currentFloor].objects = data[currentFloor].objects.filter(o => !idsToRemove.includes(o.id));
+            } else {
+                data[currentFloor].objects = data[currentFloor].objects.filter(o => o.id !== selectedObj.id); 
+            }
+            deselect(); 
+        } 
+    }
+    
+    function deselect() { selectedObj = null; selectedWalls = []; document.getElementById('edit-menu').style.display = 'none'; draw(); }
+    function changeFloor(f) { currentFloor = f; document.getElementById('f1-btn').classList.toggle('active', f===1); document.getElementById('f2-btn').classList.toggle('active', f===2); deselect(); }
     function resetView() { camera = { x: 0, y: 0, zoom: 1.0 }; draw(); }
+
+    // 保存と読込
+    function saveData() {
+        localStorage.setItem('madori_planner_data', JSON.stringify(data));
+        alert('編集状態を保存しました');
+    }
+    function loadData() {
+        const saved = localStorage.getItem('madori_planner_data');
+        if (saved) {
+            data = JSON.parse(saved);
+            deselect();
+            alert('保存データを読み込みました');
+        } else {
+            alert('保存されたデータがありません');
+        }
+    }
 
     init();
 </script>
