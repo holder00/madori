@@ -435,6 +435,7 @@
 <div id="toolbar" class="ui-panel">
     <div class="scroll-menu">
         <button id="btn-select" class="tool-btn" onclick="setMode('select')">👆<span>選択/移動</span></button>
+        <button id="btn-eraser" class="tool-btn" onclick="setMode('eraser')">🧹<span>消しゴム</span></button>
         
         <button id="btn-wall" class="tool-btn active" onclick="setMode('wall')">🧱<span>壁</span></button>
         <div class="sub-menu" id="wall-options" style="display:flex;">
@@ -487,6 +488,7 @@
     let selectedObj = null;
     let selectedWalls = [];
     let draggingObj = null;
+    let eraserMode = false; // 消しゴムモード
 
     // Undo/Redo用の履歴管理
     let history = [];
@@ -725,14 +727,50 @@
             isPinching = true;
             startDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
         } else {
-            isDragging = true;
             const touch = e.touches[0];
             lastTouch = { x: touch.pageX, y: touch.pageY };
             
             const worldPos = screenToWorld(touch.pageX, touch.pageY);
             startPos = { x: snap(worldPos.x), y: snap(worldPos.y) };
             currentPos = { ...startPos };
+            
+            // 選択モード時、何もオブジェクトがない場合はパン移動
+            if (mode === 'select') {
+                const activeLayer = getActiveLayer();
+                let hitObject = false;
+                
+                // オブジェクトのヒットチェック
+                for (let obj of activeLayer.objects) {
+                    if (obj.type === 'wall') {
+                        const dist = distToSegment(startPos, { x: obj.x1, y: obj.y1 }, { x: obj.x2, y: obj.y2 });
+                        if (dist < 20 / camera.zoom) {
+                            hitObject = true;
+                            break;
+                        }
+                    } else if (obj.type === 'area' && isPointInPoly(startPos, obj.points)) {
+                        hitObject = true;
+                        break;
+                    } else if (obj.type !== 'wall' && obj.type !== 'area') {
+                        const w = (obj.w || 0) * GRID_UNIT;
+                        const h = (obj.h || 0) * GRID_UNIT;
+                        const margin = 10 / camera.zoom;
+                        if (startPos.x >= obj.x - margin && startPos.x <= obj.x + w + margin && 
+                            startPos.y >= obj.y - margin && startPos.y <= obj.y + h + margin) {
+                            hitObject = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!hitObject) {
+                    // 何もない場所をタッチ → パン移動
+                    isPanning = true;
+                    canvas.style.cursor = 'grabbing';
+                    return;
+                }
+            }
 
+            isDragging = true;
             handleInteractionStart(startPos);
         }
     }
@@ -745,6 +783,15 @@
             camera.zoom = Math.max(0.1, Math.min(5, camera.zoom * zoomDelta));
             startDist = dist;
             document.getElementById('zoom-info').innerText = `ズーム: ${Math.round(camera.zoom * 100)}%`;
+            draw();
+        } else if (isPanning && e.touches.length === 1) {
+            // パン移動処理
+            const touch = e.touches[0];
+            const dx = touch.pageX - lastTouch.x;
+            const dy = touch.pageY - lastTouch.y;
+            camera.x += dx;
+            camera.y += dy;
+            lastTouch = { x: touch.pageX, y: touch.pageY };
             draw();
         } else if (isDragging && e.touches.length === 1) {
             const touch = e.touches[0];
@@ -760,7 +807,9 @@
         if (e.touches.length === 0) {
             const wasDraggingObject = (draggingObj !== null);
             isPinching = false;
+            isPanning = false;
             isDragging = false;
+            canvas.style.cursor = 'crosshair';
             handleInteractionEnd();
             
             // オブジェクトを移動した場合は履歴を保存
@@ -772,6 +821,66 @@
 
     // 統合されたインタラクション処理
     function handleInteractionStart(pos) {
+        if (mode === 'eraser') {
+            // 消しゴムモード：クリックしたオブジェクトを削除
+            const activeLayer = getActiveLayer();
+            let deletedSomething = false;
+            
+            // 壁の削除チェック
+            for (let i = activeLayer.objects.length - 1; i >= 0; i--) {
+                const obj = activeLayer.objects[i];
+                if (obj.type === 'wall') {
+                    const dist = distToSegment(pos, { x: obj.x1, y: obj.y1 }, { x: obj.x2, y: obj.y2 });
+                    if (dist < 20 / camera.zoom) {
+                        if (obj.locked) {
+                            alert('ロックされたオブジェクトは削除できません');
+                            return;
+                        }
+                        activeLayer.objects.splice(i, 1);
+                        deletedSomething = true;
+                        break;
+                    }
+                }
+            }
+            
+            // その他のオブジェクトの削除チェック
+            if (!deletedSomething) {
+                for (let i = activeLayer.objects.length - 1; i >= 0; i--) {
+                    const obj = activeLayer.objects[i];
+                    if (obj.type === 'area' && isPointInPoly(pos, obj.points)) {
+                        if (obj.locked) {
+                            alert('ロックされたオブジェクトは削除できません');
+                            return;
+                        }
+                        activeLayer.objects.splice(i, 1);
+                        deletedSomething = true;
+                        break;
+                    } else if (obj.type !== 'wall' && obj.type !== 'area') {
+                        const w = (obj.w || 0) * GRID_UNIT;
+                        const h = (obj.h || 0) * GRID_UNIT;
+                        const margin = 10 / camera.zoom;
+                        if (pos.x >= obj.x - margin && pos.x <= obj.x + w + margin && 
+                            pos.y >= obj.y - margin && pos.y <= obj.y + h + margin) {
+                            if (obj.locked) {
+                                alert('ロックされたオブジェクトは削除できません');
+                                return;
+                            }
+                            activeLayer.objects.splice(i, 1);
+                            deletedSomething = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (deletedSomething) {
+                updateCost();
+                saveHistory();
+                draw();
+            }
+            return;
+        }
+        
         if (mode === 'select') {
             handleSelection(pos.x, pos.y);
             if (selectedObj) {
@@ -943,17 +1052,33 @@
         mode = m;
         activeAreaType = subtype;
         activeItemType = null;
+        eraserMode = (m === 'eraser');
         deselect();
         
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
         
-        if (m === 'select') document.getElementById('btn-select').classList.add('active');
-        else if (m === 'wall') document.getElementById('btn-wall').classList.add('active');
-        else if (m === 'area' && subtype === 'room') document.getElementById('btn-area-room').classList.add('active');
-        else if (m === 'area' && subtype === 'kitchen') document.getElementById('btn-area-kitchen').classList.add('active');
+        if (m === 'select') {
+            document.getElementById('btn-select').classList.add('active');
+            canvas.style.cursor = 'default';
+        } else if (m === 'eraser') {
+            document.getElementById('btn-eraser').classList.add('active');
+            canvas.style.cursor = 'crosshair';
+        } else if (m === 'wall') {
+            document.getElementById('btn-wall').classList.add('active');
+            canvas.style.cursor = 'crosshair';
+        } else if (m === 'area' && subtype === 'room') {
+            document.getElementById('btn-area-room').classList.add('active');
+            canvas.style.cursor = 'crosshair';
+        } else if (m === 'area' && subtype === 'kitchen') {
+            document.getElementById('btn-area-kitchen').classList.add('active');
+            canvas.style.cursor = 'crosshair';
+        } else {
+            canvas.style.cursor = 'crosshair';
+        }
         
         document.getElementById('status').innerText = 
             m === 'select' ? 'モード: 選択/移動' :
+            m === 'eraser' ? 'モード: 消しゴム（オブジェクトをクリックで削除）' :
             m === 'wall' ? 'モード: 壁を描く' :
             m === 'area' ? `モード: ${subtype}エリアを作成` :
             'モード: アイテム配置';
@@ -975,13 +1100,13 @@
     function addItemAtPosition(x, y) {
         const activeLayer = getActiveLayer();
         const items = {
-            door: { w: 1, h: 1, color: 'rgba(231,76,60,0.3)', label: 'ドア' },
+            door: { w: 4, h: 1, color: 'rgba(231,76,60,0.3)', label: 'ドア' },
             window: { w: 3, h: 1, color: 'rgba(52,152,219,0.4)', label: '窓' },
-            stair: { w: 2, h: 6, color: 'rgba(149,165,166,0.5)', label: '階段' },
-            pillar: { w: 1, h: 1, color: 'rgba(44,62,80,0.8)', label: '柱' },
-            bath100: { w: 4, h: 4, color: 'rgba(52,152,219,0.3)', label: '風呂' },
-            toilet: { w: 1, h: 2, color: 'rgba(155,89,182,0.3)', label: 'トイレ' },
-            bed: { w: 1, h: 2, color: 'rgba(243,156,18,0.3)', label: 'ベッド' },
+            stair: { w: 5, h: 8, color: 'rgba(149,165,166,0.5)', label: '階段' },
+            pillar: { w: 2, h: 2, color: 'rgba(44,62,80,0.8)', label: '柱' },
+            bath100: { w: 8, h: 8, color: 'rgba(52,152,219,0.3)', label: '風呂' },
+            toilet: { w: 4, h: 4, color: 'rgba(155,89,182,0.3)', label: 'トイレ' },
+            bed: { w: 8, h: 10, color: 'rgba(243,156,18,0.3)', label: 'ベッド' },
             dining: { w: 8, h: 8, color: 'rgba(230,126,34,0.3)', label: 'ダイニング' }
         };
         
@@ -1346,7 +1471,7 @@
             ctx.strokeStyle = '#eee';
             for(let i=-2000; i<3000; i+=GRID_UNIT){
                 ctx.beginPath(); 
-                ctx.lineWidth = (i%(GRID_UNIT*2)===0 ? 1 : 0.3) / camera.zoom;
+                ctx.lineWidth = (i%(GRID_UNIT*4)===0 ? 1 : 0.3) / camera.zoom;
                 ctx.moveTo(i,-2000); ctx.lineTo(i,3000); ctx.stroke();
                 ctx.beginPath(); 
                 ctx.moveTo(-2000,i); ctx.lineTo(3000,i); ctx.stroke();
