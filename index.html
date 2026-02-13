@@ -1176,7 +1176,7 @@
         const isSelected = selectedObj && (selectedObj.id === o.id || (o.type === 'wall' && selectedWalls.some(w => w.id === o.id)));
         
         if (o.type === 'wall') {
-            ctx.strokeStyle = o.locked ? var(--locked) : (isSelected ? 'red' : (o.color || '#333'));
+            ctx.strokeStyle = o.locked ? '#f39c12' : (isSelected ? 'red' : (o.color || '#333'));
             ctx.lineWidth = (o.thicknessType === 'inner' ? 4 : 8) / camera.zoom;
             ctx.lineCap = 'round';
             ctx.beginPath(); 
