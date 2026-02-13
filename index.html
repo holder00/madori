@@ -178,9 +178,14 @@
             transition: all 0.2s;
         }
         
-        .top-btn-group button:hover {
+        .top-btn-group button:hover:not(:disabled) {
             background: #f8f9fa;
             border-color: var(--primary);
+        }
+        
+        .top-btn-group button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         
         .sub-menu { 
@@ -325,6 +330,8 @@
         </div>
         <div id="status" style="font-size:11px; flex-grow:1; text-align:center;">モード: 壁を描く</div>
         <div class="top-btn-group">
+            <button onclick="undo()" id="undo-btn" title="元に戻す (Ctrl+Z)">↶ 戻す</button>
+            <button onclick="redo()" id="redo-btn" title="やり直し (Ctrl+Y)">↷ 進む</button>
             <button onclick="checkAlignment()">整合性チェック</button>
             <button onclick="saveData()">保存</button>
             <button onclick="loadData()">読込</button>
@@ -453,6 +460,11 @@
     let selectedWalls = [];
     let draggingObj = null;
 
+    // Undo/Redo用の履歴管理
+    let history = [];
+    let historyIndex = -1;
+    const MAX_HISTORY = 50;
+
     let camera = { x: 0, y: 0, zoom: 1.0 };
     let isDragging = false, isPinching = false, isPanning = false;
     let lastTouch = { x: 0, y: 0 }, lastMouse = { x: 0, y: 0 }, startDist = 0;
@@ -477,7 +489,11 @@
         canvas.addEventListener('mouseup', onMouseUp);
         canvas.addEventListener('wheel', onWheel, {passive: false});
         
+        // キーボードショートカット
+        window.addEventListener('keydown', onKeyDown);
+        
         updateLayerList();
+        saveHistory(); // 初期状態を保存
         draw();
     }
 
@@ -658,7 +674,7 @@
     }
 
     function handleInteractionEnd() {
-        if (mode === 'wall' && isDragging) {
+        if (mode === 'wall') {
             if (Math.abs(currentPos.x - startPos.x) > 5 || Math.abs(currentPos.y - startPos.y) > 5) {
                 const activeLayer = getActiveLayer();
                 activeLayer.objects.push({
@@ -671,6 +687,7 @@
                     locked: false
                 });
                 updateCost();
+                saveHistory();
             }
         } else if (mode === 'area') {
             // エリア作成はタップで継続
@@ -822,7 +839,80 @@
                 locked: false
             });
             updateCost();
+            saveHistory();
             draw();
+        }
+    }
+
+    // Undo/Redo機能
+    function saveHistory() {
+        // 現在位置より後の履歴を削除
+        history = history.slice(0, historyIndex + 1);
+        
+        // 現在の状態を保存
+        const snapshot = JSON.parse(JSON.stringify(data));
+        history.push(snapshot);
+        
+        // 履歴の上限を超えたら古いものを削除
+        if (history.length > MAX_HISTORY) {
+            history.shift();
+        } else {
+            historyIndex++;
+        }
+        
+        updateUndoRedoButtons();
+    }
+
+    function undo() {
+        if (historyIndex > 0) {
+            historyIndex--;
+            data = JSON.parse(JSON.stringify(history[historyIndex]));
+            updateLayerList();
+            updateCost();
+            deselect();
+            updateUndoRedoButtons();
+        }
+    }
+
+    function redo() {
+        if (historyIndex < history.length - 1) {
+            historyIndex++;
+            data = JSON.parse(JSON.stringify(history[historyIndex]));
+            updateLayerList();
+            updateCost();
+            deselect();
+            updateUndoRedoButtons();
+        }
+    }
+
+    function updateUndoRedoButtons() {
+        const undoBtn = document.getElementById('undo-btn');
+        const redoBtn = document.getElementById('redo-btn');
+        
+        if (undoBtn) undoBtn.disabled = historyIndex <= 0;
+        if (redoBtn) redoBtn.disabled = historyIndex >= history.length - 1;
+    }
+
+    function onKeyDown(e) {
+        // Ctrl+Z または Cmd+Z で Undo
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+            e.preventDefault();
+            undo();
+        }
+        // Ctrl+Y または Ctrl+Shift+Z または Cmd+Shift+Z で Redo
+        else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+            e.preventDefault();
+            redo();
+        }
+        // Delete または Backspace で削除
+        else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObj) {
+            e.preventDefault();
+            deleteObject();
+        }
+        // Escape で選択解除
+        else if (e.key === 'Escape') {
+            e.preventDefault();
+            deselect();
         }
     }
 
@@ -898,6 +988,7 @@
         data[currentFloor].layers.push(newLayer);
         data[currentFloor].activeLayer = newId;
         updateLayerList();
+        saveHistory();
         draw();
     }
 
@@ -925,6 +1016,7 @@
                 w.color = currentWallColor;
             });
         }
+        saveHistory();
         draw();
     }
 
@@ -939,6 +1031,7 @@
         }
         selectedObj.locked = !selectedObj.locked;
         showEditMenu();
+        saveHistory();
         draw();
     }
 
@@ -1330,6 +1423,7 @@
     function rotateObject() { 
         if(selectedObj && selectedObj.type !== 'wall' && !selectedObj.locked) { 
             selectedObj.rotation = (selectedObj.rotation + 90) % 360; 
+            saveHistory();
             draw(); 
         } 
     }
@@ -1338,6 +1432,7 @@
         if (selectedObj && selectedObj.w !== undefined && !selectedObj.locked) { 
             selectedObj.w = Math.max(2, selectedObj.w + dw); 
             selectedObj.h = Math.max(2, selectedObj.h + dh); 
+            saveHistory();
             draw(); 
         } 
     }
@@ -1357,6 +1452,7 @@
                 activeLayer.objects = activeLayer.objects.filter(o => o.id !== selectedObj.id); 
             }
             updateCost(); 
+            saveHistory();
             deselect(); 
         } 
     }
@@ -1418,6 +1514,7 @@
             });
             tempPoints = [];
             updateCost();
+            saveHistory();
             draw();
         }
     });
